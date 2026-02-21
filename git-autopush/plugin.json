@@ -1,0 +1,22 @@
+{
+  "name": "git-autopush",
+  "description": "Commit and push blog with current timestamp",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Git Commit & Push",
+        "input": []
+      }
+    },
+    {
+      "type": "cron",
+      "content": {
+        "schedule": "*/10 * * * *",
+        "label": "Auto push"
+      }
+    }
+  ]
+}

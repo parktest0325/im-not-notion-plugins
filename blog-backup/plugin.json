@@ -1,0 +1,41 @@
+{
+  "name": "blog-backup",
+  "description": "Create compressed backup of the Hugo blog",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Backup Now",
+        "input": [
+          {
+            "name": "include_git",
+            "label": "Include .git directory",
+            "type": "boolean",
+            "default": "true"
+          },
+          {
+            "name": "include_themes",
+            "label": "Include themes directory",
+            "type": "boolean",
+            "default": "true"
+          },
+          {
+            "name": "keep",
+            "label": "Keep recent N backups (0 = keep all)",
+            "type": "text",
+            "default": "5"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cron",
+      "content": {
+        "schedule": "0 0 * * 0",
+        "label": "Weekly backup"
+      }
+    }
+  ]
+}

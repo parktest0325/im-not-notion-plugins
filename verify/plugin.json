@@ -1,0 +1,22 @@
+{
+  "name": "verify",
+  "description": "Verify image sync consistency — orphans, broken refs, cross-refs, duplicates, case mismatches",
+  "version": "0.1.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Verify Image Sync",
+        "input": [
+          {
+            "name": "verbose",
+            "label": "Verbose (show all images & files)",
+            "type": "boolean",
+            "default": "false"
+          }
+        ]
+      }
+    }
+  ]
+}

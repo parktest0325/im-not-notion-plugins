@@ -1,0 +1,35 @@
+{
+  "name": "git-autosquash",
+  "description": "Squash commits by date range or monthly auto-squash",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Squash Commits",
+        "input": [
+          {
+            "name": "since",
+            "label": "From (YYYY-MM-DD)",
+            "type": "text",
+            "default": ""
+          },
+          {
+            "name": "until",
+            "label": "To (YYYY-MM-DD)",
+            "type": "text",
+            "default": ""
+          }
+        ]
+      }
+    },
+    {
+      "type": "cron",
+      "content": {
+        "schedule": "0 0 1 * *",
+        "label": "Monthly squash"
+      }
+    }
+  ]
+}
