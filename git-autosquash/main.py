@@ -27,7 +27,7 @@ def get_base_path(data):
 
     try:
         config = load_server_config()
-        return config.get("hugo_config", {}).get("base_path", "")
+        return config.get("cms_config", {}).get("hugo_config", {}).get("base_path", "")
     except Exception:
         return ""
 
@@ -236,16 +236,18 @@ def main():
 
     if not base_path:
         config_example = json.dumps({
-            "hugo_config": {
-                "base_path": "/home/user/my-blog",
-                "content_path": "posts",
-                "image_path": "static",
+            "cms_config": {
+                "hugo_config": {
+                    "base_path": "/home/user/my-blog",
+                    "content_paths": ["posts"],
+                    "image_path": "static",
+                }
             }
         }, indent=2)
         print(json.dumps(result_guide(
             "Configuration Required",
             "base_path not configured.\n\n"
-            "Set hugo_config.base_path in ~/.inn_server_config.json:\n\n"
+            "Set cms_config.hugo_config.base_path in ~/.inn_server_config.json:\n\n"
             f"{config_example}\n",
         )))
         return

@@ -109,7 +109,7 @@ def main():
             "cms_config": {
                 "hugo_config": {
                     "base_path": "/home/user/my-blog",
-                    "content_path": "posts",
+                    "content_paths": ["posts"],
                     "image_path": "static",
                 }
             }
