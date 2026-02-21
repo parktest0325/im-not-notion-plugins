@@ -27,7 +27,7 @@ def get_base_path(data):
 
     try:
         config = load_server_config()
-        return config.get("hugo_config", {}).get("base_path", "")
+        return config.get("cms_config", {}).get("hugo_config", {}).get("base_path", "")
     except Exception:
         return ""
 
@@ -48,7 +48,7 @@ def result_guide(title, body):
 
 
 def handle_push_error(stderr):
-    if "Permission denied" in stderr or "publickey" in stderr:
+    if "Permission denied" in stderr or "publickey" in stderr or "Host key verification failed" in stderr:
         pubkey = None
         for key_file in ["~/.ssh/id_ed25519.pub", "~/.ssh/id_rsa.pub"]:
             path = os.path.expanduser(key_file)
@@ -74,7 +74,7 @@ def handle_push_error(stderr):
                 "No SSH key found on the server.\n\n"
                 "Run the following on the server:\n\n"
                 "  # 1. Generate SSH key\n"
-                "  ssh-keygen -t ed25519 -C \"server\"\n\n"
+                "  ssh-keygen -t ed25519 -C \"inn-autopush-plugin\"\n\n"
                 "  # 2. Copy the public key\n"
                 "  cat ~/.ssh/id_ed25519.pub\n\n"
                 "  # 3. Add it to your Git provider\n"
@@ -106,16 +106,18 @@ def main():
 
     if not base_path:
         config_example = json.dumps({
-            "hugo_config": {
-                "base_path": "/home/user/my-blog",
-                "content_path": "posts",
-                "image_path": "static",
+            "cms_config": {
+                "hugo_config": {
+                    "base_path": "/home/user/my-blog",
+                    "content_path": "posts",
+                    "image_path": "static",
+                }
             }
         }, indent=2)
         print(json.dumps(result_guide(
             "Configuration Required",
             "base_path not configured.\n\n"
-            "Set hugo_config.base_path in ~/.inn_server_config.json:\n\n"
+            "Set cms_config.hugo_config.base_path in ~/.inn_server_config.json:\n\n"
             f"{config_example}\n",
         )))
         return
@@ -169,10 +171,23 @@ def main():
     else:
         msg = f"[{now}] auto"
 
-    subprocess.run(
+    commit = subprocess.run(
         ["git", "commit", "-m", msg, "--no-gpg-sign"],
         capture_output=True, text=True,
     )
+    if commit.returncode != 0:
+        stderr = commit.stderr.strip()
+        if "Please tell me who you are" in stderr or "user.name" in stderr:
+            print(json.dumps(result_guide(
+                "Git User Not Configured",
+                "Git user.name/email not set.\n\n"
+                "Run the following on the server:\n\n"
+                "  git config --global user.name \"Your Name\"\n"
+                "  git config --global user.email \"you@example.com\"\n",
+            )))
+        else:
+            print(json.dumps(result_toast(f"Commit failed: {stderr}")))
+        return
 
     push = subprocess.run(
         ["git", "push", "origin", "HEAD"],

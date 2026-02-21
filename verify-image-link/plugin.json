@@ -1,19 +1,19 @@
 {
-  "name": "verify",
-  "description": "Verify image sync consistency — orphans, broken refs, cross-refs, duplicates, case mismatches",
-  "version": "0.1.0",
+  "name": "verify-image-link",
+  "description": "Verify image link consistency — external refs, broken links, case mismatches, orphans, duplicates",
+  "version": "1.0.0",
   "entry": "main.py",
   "triggers": [
     {
       "type": "manual",
       "content": {
-        "label": "Verify Image Sync",
+        "label": "Verify Image Links",
         "input": [
           {
             "name": "verbose",
             "label": "Verbose (show all images & files)",
             "type": "boolean",
-            "default": "false"
+            "default": "true"
           }
         ]
       }

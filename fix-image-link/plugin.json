@@ -1,0 +1,34 @@
+{
+  "name": "fix-image-link",
+  "description": "Fix image links — copy external refs, download URLs, clean global orphans (two-pass)",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Fix Image Links",
+        "input": [
+          {
+            "name": "dry_run",
+            "label": "Dry run (preview only, no changes)",
+            "type": "boolean",
+            "default": "false"
+          },
+          {
+            "name": "download_urls",
+            "label": "Download external URLs",
+            "type": "boolean",
+            "default": "true"
+          },
+          {
+            "name": "clean_orphans",
+            "label": "Delete orphan images and dirs (global)",
+            "type": "boolean",
+            "default": "true"
+          }
+        ]
+      }
+    }
+  ]
+}
