@@ -131,12 +131,28 @@ def main():
             if not found:
                 lines.insert(0, 'theme = "im-not-notion-theme"\n')
 
-            # Also ensure menu entries exist for Blog/Projects
+            # Also ensure menu entries exist for Blog/Projects/Guestbook
             has_menu = any("[menu]" in l or "[[menu." in l for l in lines)
             if not has_menu:
                 lines.append("\n[menu]\n")
                 lines.append('  [[menu.main]]\n    name = "Blog"\n    url = "/blog/"\n    weight = 1\n')
                 lines.append('  [[menu.main]]\n    name = "Projects"\n    url = "/projects/"\n    weight = 2\n')
+                lines.append('  [[menu.main]]\n    name = "Guestbook"\n    url = "/guestbook/"\n    weight = 3\n')
+            else:
+                # Menu exists: ensure Guestbook entry is present
+                has_guestbook = any("guestbook" in l.lower() for l in lines)
+                if not has_guestbook:
+                    # Find last menu entry and append after it
+                    last_menu_idx = -1
+                    for i, line in enumerate(lines):
+                        if "[[menu." in line:
+                            last_menu_idx = i
+                    if last_menu_idx >= 0:
+                        # Find the end of the last menu block
+                        insert_idx = last_menu_idx + 1
+                        while insert_idx < len(lines) and lines[insert_idx].strip() and not lines[insert_idx].strip().startswith("["):
+                            insert_idx += 1
+                        lines.insert(insert_idx, '  [[menu.main]]\n    name = "Guestbook"\n    url = "/guestbook/"\n    weight = 3\n')
 
             with open(hugo_toml_dst, "w") as f:
                 f.writelines(lines)
