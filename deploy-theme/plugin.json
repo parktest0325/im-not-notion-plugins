@@ -19,7 +19,7 @@
             "name": "overwrite_toml",
             "label": "Overwrite hugo.toml (replaces with example config)",
             "type": "boolean",
-            "default": "true"
+            "default": "false"
           }
         ]
       }
