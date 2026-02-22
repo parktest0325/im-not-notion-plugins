@@ -329,11 +329,15 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
     orphan_details = []
 
     if clean_orphans:
+        # Only scan inside content_paths sections to avoid deleting
+        # Hugo site resources (favicons, logos, etc.) at the image_path root.
         all_images = set()
-        for abs_path in find_image_files(image_root):
-            rel = get_relative_path(abs_path, image_root)
-            if rel:
-                all_images.add(rel)
+        for section in content_paths:
+            section_dir = os.path.join(image_root, section)
+            for abs_path in find_image_files(section_dir):
+                rel = get_relative_path(abs_path, image_root)
+                if rel:
+                    all_images.add(rel)
 
         md_full_rels = set(full_rel for _, full_rel, _ in md_files)
 

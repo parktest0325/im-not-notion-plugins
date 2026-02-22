@@ -106,11 +106,19 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
     # ── 1. Collect all image files ──
     all_images = set()
     all_images_lower = {}  # lowercase -> set of actual paths
+    section_images = set()  # images inside content_paths sections
+    non_section_images = set()  # images outside content_paths sections
+    section_prefixes = tuple(f"{s}/" for s in content_paths)
+
     for abs_path in find_image_files(image_root):
         rel = get_relative_path(abs_path, image_root)
         if rel:
             all_images.add(rel)
             all_images_lower.setdefault(rel.lower(), set()).add(rel)
+            if rel.startswith(section_prefixes):
+                section_images.add(rel)
+            else:
+                non_section_images.add(rel)
 
     # ── 2. Collect all md files ──
     md_entries = []  # (display_path, full_rel, local_refs, external_urls)
@@ -174,13 +182,11 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
                 else:
                     broken_links.append((display_path, ref_clean))
 
-    # ── 4. Orphans ──
-    # Orphan images: not referenced by any md
-    orphan_images = sorted(all_images - referenced_images)
+    # ── 4. Orphans (section only — fix target) ──
+    orphan_images = sorted(section_images - referenced_images)
 
-    # Orphan dirs: image dirs with no corresponding md
     image_dirs = set()
-    for img in all_images:
+    for img in section_images:
         parent = os.path.dirname(img)
         if parent:
             image_dirs.add(parent)
@@ -188,7 +194,7 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
     orphan_dirs = []
     for d in sorted(image_dirs):
         if d not in md_full_rels:
-            count = sum(1 for img in all_images if os.path.dirname(img) == d)
+            count = sum(1 for img in section_images if os.path.dirname(img) == d)
             orphan_dirs.append((d, count))
 
     # ── 5. Duplicates ──
@@ -209,14 +215,15 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
 
     lines = []
     lines.append("=== Image Link Verification ===")
-    lines.append(f"Images: {len(all_images)}  |  MD files: {len(md_entries)}  |  Issues: {issue_count}")
+    lines.append(f"Images: {len(section_images)} (section) + {len(non_section_images)} (other)  |  "
+                 f"MD files: {len(md_entries)}  |  Issues: {issue_count}")
     lines.append(f"Sections: {', '.join(content_paths)}")
     lines.append("")
 
     if verbose:
-        # 접이식 블록: 전체 이미지 목록
-        detail = "\n".join(f"  {img}" for img in sorted(all_images))
-        lines.append(f"{{{{copy:All Images ({len(all_images)})}}}}")
+        # 접이식 블록: 섹션 이미지 목록
+        detail = "\n".join(f"  {img}" for img in sorted(section_images))
+        lines.append(f"{{{{copy:Section Images ({len(section_images)})}}}}")
         lines.append(detail)
         lines.append("{{/copy}}")
         lines.append("")
@@ -226,6 +233,15 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
         lines.append(f"{{{{copy:All MD Files ({len(md_entries)})}}}}")
         lines.append(detail)
         lines.append("{{/copy}}")
+        lines.append("")
+
+    if non_section_images:
+        lines.append(f"[i] Non-Section Files — {len(non_section_images)} (not managed by fix)")
+        if verbose:
+            detail = "\n".join(f"  {img}" for img in sorted(non_section_images))
+            lines.append("{{copy:[i] Non-Section Files Details}}")
+            lines.append(detail)
+            lines.append("{{/copy}}")
         lines.append("")
 
     if issue_count == 0:
