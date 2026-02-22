@@ -124,13 +124,21 @@ def do_squash(base_path, since, until, range_label):
         capture_output=True, text=True,
     ).stdout.strip()
 
-    # Find commits in range (oldest first)
+    # Find commits in range [since, until) by AUTHOR date — oldest first
+    # Using author date (not committer date) because rebase rewrites committer dates.
+    # git log --since/--until filters by committer date, so we filter manually.
     log = subprocess.run(
-        ["git", "log", f"--since={since}", f"--until={until}",
-         "--format=%H %ci", "--reverse"],
+        ["git", "log", "--format=%H %aI", "--reverse"],
         capture_output=True, text=True,
     )
-    lines = [l for l in log.stdout.strip().split("\n") if l.strip()]
+    lines = []
+    for l in log.stdout.strip().split("\n"):
+        if not l.strip():
+            continue
+        parts = l.split()
+        author_date = parts[1][:10]  # YYYY-MM-DD from ISO 8601
+        if since <= author_date < until:
+            lines.append(l)
 
     if len(lines) == 0:
         return {"success": True, "message": f"No commits found in {since} ~ {until}"}
@@ -140,9 +148,10 @@ def do_squash(base_path, since, until, range_label):
 
     count = len(lines)
     first_hash = lines[0].split()[0]
-    first_date = lines[0].split()[1] + " " + lines[0].split()[2]
+    first_date = lines[0].split()[1][:10]  # YYYY-MM-DD from ISO 8601
     last_hash = lines[-1].split()[0]
-    last_date = lines[-1].split()[1] + " " + lines[-1].split()[2]
+    last_date = lines[-1].split()[1][:10]
+    last_author_date_iso = lines[-1].split()[1]  # Full ISO 8601 for GIT_AUTHOR_DATE
 
     # Get parent of first commit
     parent_result = subprocess.run(
@@ -150,10 +159,21 @@ def do_squash(base_path, since, until, range_label):
         capture_output=True, text=True,
     )
     if parent_result.returncode != 0:
-        return result_toast("Cannot squash: first commit in range has no parent")
-    parent_hash = parent_result.stdout.strip()
+        # First commit has no parent (initial commit) — skip it, squash the rest
+        if len(lines) <= 2:
+            return {"success": True, "message": f"Only {count} commits in {since} ~ {until}, cannot squash (initial commit has no parent)"}
+        parent_hash = first_hash
+        lines = lines[1:]
+        count = len(lines)
+        first_hash = lines[0].split()[0]
+        first_date = lines[0].split()[1][:10]
+    else:
+        parent_hash = parent_result.stdout.strip()
 
     msg = f"[{range_label}] squash {count} commits ({first_date} ~ {last_date})"
+
+    # Squash commit inherits the last commit's author date (not current time)
+    squash_env = {**os.environ, "GIT_AUTHOR_DATE": last_author_date_iso}
 
     # Check if there are commits after last_hash
     newer = subprocess.run(
@@ -166,7 +186,7 @@ def do_squash(base_path, since, until, range_label):
         subprocess.run(["git", "reset", "--soft", parent_hash], check=True)
         subprocess.run(
             ["git", "commit", "-m", msg, "--no-gpg-sign"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=squash_env,
         )
     else:
         # Preserve newer commits via rebase
@@ -177,7 +197,7 @@ def do_squash(base_path, since, until, range_label):
         subprocess.run(["git", "reset", "--soft", parent_hash], check=True)
         subprocess.run(
             ["git", "commit", "-m", msg, "--no-gpg-sign"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=squash_env,
         )
 
         subprocess.run(
@@ -185,7 +205,8 @@ def do_squash(base_path, since, until, range_label):
             check=True, capture_output=True, text=True,
         )
         rebase = subprocess.run(
-            ["git", "rebase", "--onto", "inn_temp_squash", last_hash, branch],
+            ["git", "rebase", "--committer-date-is-author-date",
+             "--onto", "inn_temp_squash", last_hash, branch],
             capture_output=True, text=True,
         )
         if rebase.returncode != 0:
