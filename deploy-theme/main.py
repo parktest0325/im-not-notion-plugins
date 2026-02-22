@@ -61,6 +61,7 @@ def main():
         return
 
     deploy_content = str(data.get("deploy_content", "true")).lower() == "true"
+    overwrite_toml = str(data.get("overwrite_toml", "true")).lower() == "true"
 
     # Plugin dir = where this script lives
     plugin_dir = os.path.dirname(os.path.abspath(__file__))
@@ -115,8 +116,8 @@ def main():
         hugo_toml_src = os.path.join(example_dir, "hugo.toml")
         hugo_toml_dst = os.path.join(base_path, "hugo.toml")
 
-        if os.path.isfile(hugo_toml_dst):
-            # Existing config: patch theme line, keep everything else (baseURL, etc.)
+        if os.path.isfile(hugo_toml_dst) and not overwrite_toml:
+            # Existing config + no overwrite: patch theme line, keep everything else
             with open(hugo_toml_dst, "r") as f:
                 lines = f.readlines()
 
@@ -130,6 +131,11 @@ def main():
 
             if not found:
                 lines.insert(0, 'theme = "im-not-notion-theme"\n')
+
+            # Ensure [outputs] home includes JSON for search
+            has_outputs = any("[outputs]" in l for l in lines)
+            if not has_outputs:
+                lines.append('\n[outputs]\n  home = ["HTML", "JSON"]\n')
 
             # Also ensure menu entries exist for Blog/Projects/Guestbook
             has_menu = any("[menu]" in l or "[[menu." in l for l in lines)
