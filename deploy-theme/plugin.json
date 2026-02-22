@@ -1,0 +1,22 @@
+{
+  "name": "deploy-theme",
+  "description": "Deploy im-not-notion-theme with demo content to the server",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Deploy Theme",
+        "input": [
+          {
+            "name": "deploy_content",
+            "label": "Deploy demo content (overwrites content/)",
+            "type": "boolean",
+            "default": "true"
+          }
+        ]
+      }
+    }
+  ]
+}
