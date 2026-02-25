@@ -1,7 +1,7 @@
 {
   "name": "deploy-theme",
-  "description": "Deploy im-not-notion-theme with demo content to the server",
-  "version": "1.0.0",
+  "description": "Deploy im-not-notion-theme to the server",
+  "version": "1.1.0",
   "entry": "main.py",
   "triggers": [
     {
@@ -10,14 +10,26 @@
         "label": "Deploy Theme",
         "input": [
           {
+            "name": "theme_url",
+            "label": "Theme git URL (empty = use bundled theme)",
+            "type": "text",
+            "default": "https://github.com/parktest0325/im-not-notion-theme.git"
+          },
+          {
             "name": "deploy_content",
-            "label": "Deploy demo content (overwrites content/)",
+            "label": "Deploy demo content (overwrites content/ with exampleSite)",
             "type": "boolean",
-            "default": "true"
+            "default": "false"
           },
           {
             "name": "overwrite_toml",
-            "label": "Overwrite hugo.toml (replaces with example config)",
+            "label": "Overwrite hugo.toml (replace with exampleSite config)",
+            "type": "boolean",
+            "default": "false"
+          },
+          {
+            "name": "clean_overrides",
+            "label": "Clean Hugo override folders (layouts, archetypes, assets, i18n, data)",
             "type": "boolean",
             "default": "false"
           }

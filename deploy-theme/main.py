@@ -4,7 +4,13 @@
 import json
 import sys
 import os
+import re
 import shutil
+import subprocess
+
+
+# Hugo override folders — site-level copies override theme equivalents
+HUGO_OVERRIDE_DIRS = ["layouts", "archetypes", "assets", "i18n", "data"]
 
 
 def load_server_config():
@@ -43,6 +49,148 @@ def copytree(src, dst):
             shutil.copy2(s, d)
 
 
+def run(cmd, cwd=None):
+    """Run shell command, return (returncode, stdout, stderr)."""
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+def remove_submodule(base_path, theme_rel):
+    """Remove existing git submodule if present."""
+    run(f"git submodule deinit -f {theme_rel}", cwd=base_path)
+    run(f"git rm -rf {theme_rel}", cwd=base_path)
+    git_modules = os.path.join(base_path, ".git", "modules", theme_rel)
+    if os.path.isdir(git_modules):
+        shutil.rmtree(git_modules)
+
+
+def deploy_theme_submodule(base_path, theme_url, theme_dst, theme_rel, actions_log):
+    """Deploy theme as git submodule."""
+    # Remove existing (submodule or plain directory)
+    remove_submodule(base_path, theme_rel)
+    if os.path.isdir(theme_dst):
+        shutil.rmtree(theme_dst)
+
+    # Add submodule
+    rc, out, err = run(f"git submodule add {theme_url} {theme_rel}", cwd=base_path)
+    if rc != 0:
+        actions_log.append(f"Submodule add failed: {err}")
+        return False
+
+    actions_log.append(f"Theme → submodule {theme_url}")
+    return True
+
+
+def deploy_theme_copy(theme_src, theme_dst, actions_log):
+    """Deploy theme by copying bundled files."""
+    if os.path.isdir(theme_dst):
+        shutil.rmtree(theme_dst)
+    os.makedirs(theme_dst, exist_ok=True)
+    for entry in os.scandir(theme_src):
+        if entry.name in ("exampleSite", ".git"):
+            continue
+        s = entry.path
+        d = os.path.join(theme_dst, entry.name)
+        if entry.is_dir(follow_symlinks=False):
+            copytree(s, d)
+        else:
+            shutil.copy2(s, d)
+    actions_log.append(f"Theme → {theme_dst} (copied)")
+
+
+def deploy_demo_content(theme_src, base_path, actions_log):
+    """Option 1: Deploy exampleSite/content/ to base_path/content/."""
+    example_dir = os.path.join(theme_src, "exampleSite")
+    content_src = os.path.join(example_dir, "content")
+    if not os.path.isdir(content_src):
+        actions_log.append("Content — exampleSite/content/ not found, skipped")
+        return
+
+    content_dst = os.path.join(base_path, "content")
+
+    # Rename old → copy new → delete old
+    old_content = None
+    if os.path.isdir(content_dst):
+        old_content = content_dst + "_old"
+        if os.path.exists(old_content):
+            shutil.rmtree(old_content)
+        os.rename(content_dst, old_content)
+
+    shutil.copytree(content_src, content_dst)
+
+    if old_content and os.path.isdir(old_content):
+        shutil.rmtree(old_content)
+    actions_log.append(f"Content → {content_dst}")
+
+    # Patch content_paths in server config to match demo sections
+    demo_sections = []
+    for entry in os.scandir(content_dst):
+        if entry.is_dir() and not entry.name.startswith("_"):
+            demo_sections.append(entry.name)
+    demo_sections.sort()
+
+    if demo_sections:
+        config_path = os.path.expanduser("~/.inn_server_config.json")
+        try:
+            config = load_server_config()
+            hugo_cfg = config.get("cms_config", {}).get("hugo_config", {})
+            old_paths = hugo_cfg.get("content_paths", [])
+            hugo_cfg["content_paths"] = demo_sections
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            actions_log.append(f"content_paths → {demo_sections} (was {old_paths})")
+        except Exception as e:
+            actions_log.append(f"content_paths patch failed: {e}")
+
+
+def overwrite_hugo_toml(theme_src, base_path, actions_log):
+    """Option 2: Overwrite hugo.toml with exampleSite version, patching baseURL."""
+    example_dir = os.path.join(theme_src, "exampleSite")
+    hugo_toml_src = os.path.join(example_dir, "hugo.toml")
+    hugo_toml_dst = os.path.join(base_path, "hugo.toml")
+
+    if not os.path.isfile(hugo_toml_src):
+        actions_log.append("hugo.toml — exampleSite/hugo.toml not found, skipped")
+        return
+
+    shutil.copy2(hugo_toml_src, hugo_toml_dst)
+
+    # Patch baseURL from server config
+    try:
+        config = load_server_config()
+        domain = config.get("cms_config", {}).get("hugo_config", {}).get("url", "")
+        if domain:
+            with open(hugo_toml_dst, "r") as f:
+                content = f.read()
+            content = re.sub(
+                r'baseURL\s*=\s*"[^"]*"',
+                f'baseURL = "{domain}"',
+                content,
+            )
+            with open(hugo_toml_dst, "w") as f:
+                f.write(content)
+            actions_log.append(f"hugo.toml → overwritten (baseURL = {domain})")
+        else:
+            actions_log.append("hugo.toml → overwritten (baseURL from example)")
+    except Exception:
+        actions_log.append("hugo.toml → overwritten (baseURL from example)")
+
+
+def clean_override_folders(base_path, actions_log):
+    """Option 3: Remove Hugo override folders from site root."""
+    removed = []
+    for dirname in HUGO_OVERRIDE_DIRS:
+        dirpath = os.path.join(base_path, dirname)
+        if os.path.isdir(dirpath):
+            shutil.rmtree(dirpath)
+            removed.append(dirname)
+
+    if removed:
+        actions_log.append(f"Cleaned overrides → {', '.join(removed)}")
+    else:
+        actions_log.append("Clean overrides — no override folders found")
+
+
 def main():
     data = {}
     if not sys.stdin.isatty():
@@ -60,151 +208,42 @@ def main():
         print(json.dumps(result_toast(f"Path not found: {base_path}")))
         return
 
-    deploy_content = str(data.get("deploy_content", "true")).lower() == "true"
-    overwrite_toml = str(data.get("overwrite_toml", "true")).lower() == "true"
+    # Read options
+    theme_url = data.get("theme_url", "").strip()
+    opt_deploy_content = str(data.get("deploy_content", "false")).lower() == "true"
+    opt_overwrite_toml = str(data.get("overwrite_toml", "false")).lower() == "true"
+    opt_clean_overrides = str(data.get("clean_overrides", "false")).lower() == "true"
 
-    # Plugin dir = where this script lives
     plugin_dir = os.path.dirname(os.path.abspath(__file__))
-    theme_src = os.path.join(plugin_dir, "im-not-notion-theme")
-
-    if not os.path.isdir(theme_src):
-        print(json.dumps(result_toast(f"Theme not found: {theme_src}")))
-        return
+    theme_rel = os.path.join("themes", "im-not-notion-theme")
+    theme_dst = os.path.join(base_path, theme_rel)
 
     actions_log = []
 
-    # 1. Deploy theme to base_path/themes/im-not-notion-theme/
-    theme_dst = os.path.join(base_path, "themes", "im-not-notion-theme")
+    # Deploy theme: submodule (url provided) or copy (bundled)
+    if theme_url:
+        if not deploy_theme_submodule(base_path, theme_url, theme_dst, theme_rel, actions_log):
+            print(json.dumps(result_toast(f"Failed to add submodule: {theme_url}")))
+            return
+        theme_src = theme_dst
+    else:
+        theme_src = os.path.join(plugin_dir, "im-not-notion-theme")
+        if not os.path.isdir(theme_src):
+            print(json.dumps(result_toast(f"Theme not found: {theme_src}")))
+            return
+        deploy_theme_copy(theme_src, theme_dst, actions_log)
 
-    # Clean and overwrite theme directory
-    if os.path.isdir(theme_dst):
-        shutil.rmtree(theme_dst)
-    os.makedirs(theme_dst, exist_ok=True)
-    for entry in os.scandir(theme_src):
-        if entry.name in ("exampleSite", ".git"):
-            continue
-        s = entry.path
-        d = os.path.join(theme_dst, entry.name)
-        if entry.is_dir(follow_symlinks=False):
-            copytree(s, d)
-        else:
-            shutil.copy2(s, d)
+    # Option 1: deploy demo content
+    if opt_deploy_content:
+        deploy_demo_content(theme_src, base_path, actions_log)
 
-    actions_log.append(f"Theme → {theme_dst}")
+    # Option 2: overwrite hugo.toml
+    if opt_overwrite_toml:
+        overwrite_hugo_toml(theme_src, base_path, actions_log)
 
-    # 2. Deploy demo content
-    example_dir = os.path.join(theme_src, "exampleSite")
-    if deploy_content and os.path.isdir(example_dir):
-        content_src = os.path.join(example_dir, "content")
-        content_dst = os.path.join(base_path, "content")
-
-        # Rename old → copy new → delete old
-        old_content = None
-        if os.path.isdir(content_dst):
-            old_content = content_dst + "_old"
-            if os.path.exists(old_content):
-                shutil.rmtree(old_content)
-            os.rename(content_dst, old_content)
-
-        shutil.copytree(content_src, content_dst)
-
-        if old_content and os.path.isdir(old_content):
-            shutil.rmtree(old_content)
-        actions_log.append(f"Content → {content_dst}")
-
-        # Copy hugo.toml (merge theme setting into existing, or copy if none)
-        hugo_toml_src = os.path.join(example_dir, "hugo.toml")
-        hugo_toml_dst = os.path.join(base_path, "hugo.toml")
-
-        if os.path.isfile(hugo_toml_dst) and not overwrite_toml:
-            # Existing config + no overwrite: patch theme line, keep everything else
-            with open(hugo_toml_dst, "r") as f:
-                lines = f.readlines()
-
-            found = False
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if stripped.startswith("theme") and "=" in stripped:
-                    lines[i] = 'theme = "im-not-notion-theme"\n'
-                    found = True
-                    break
-
-            if not found:
-                lines.insert(0, 'theme = "im-not-notion-theme"\n')
-
-            # Ensure [outputs] home includes JSON for search
-            has_outputs = any("[outputs]" in l for l in lines)
-            if not has_outputs:
-                lines.append('\n[outputs]\n  home = ["HTML", "JSON"]\n')
-
-            # Also ensure menu entries exist for Blog/Projects/Guestbook
-            has_menu = any("[menu]" in l or "[[menu." in l for l in lines)
-            if not has_menu:
-                lines.append("\n[menu]\n")
-                lines.append('  [[menu.main]]\n    name = "Blog"\n    url = "/blog/"\n    weight = 1\n')
-                lines.append('  [[menu.main]]\n    name = "Projects"\n    url = "/projects/"\n    weight = 2\n')
-                lines.append('  [[menu.main]]\n    name = "Guestbook"\n    url = "/guestbook/"\n    weight = 3\n')
-            else:
-                # Menu exists: ensure Guestbook entry is present
-                has_guestbook = any("guestbook" in l.lower() for l in lines)
-                if not has_guestbook:
-                    # Find last menu entry and append after it
-                    last_menu_idx = -1
-                    for i, line in enumerate(lines):
-                        if "[[menu." in line:
-                            last_menu_idx = i
-                    if last_menu_idx >= 0:
-                        # Find the end of the last menu block
-                        insert_idx = last_menu_idx + 1
-                        while insert_idx < len(lines) and lines[insert_idx].strip() and not lines[insert_idx].strip().startswith("["):
-                            insert_idx += 1
-                        lines.insert(insert_idx, '  [[menu.main]]\n    name = "Guestbook"\n    url = "/guestbook/"\n    weight = 3\n')
-
-            with open(hugo_toml_dst, "w") as f:
-                f.writelines(lines)
-            actions_log.append("hugo.toml → theme + menu patched (baseURL preserved)")
-        else:
-            # No existing config: copy example but read baseURL from server config
-            shutil.copy2(hugo_toml_src, hugo_toml_dst)
-            try:
-                config = load_server_config()
-                domain = config.get("cms_config", {}).get("hugo_config", {}).get("base_url", "")
-                if domain:
-                    with open(hugo_toml_dst, "r") as f:
-                        content = f.read()
-                    import re
-                    content = re.sub(
-                        r'baseURL\s*=\s*"[^"]*"',
-                        f'baseURL = "{domain}"',
-                        content,
-                    )
-                    with open(hugo_toml_dst, "w") as f:
-                        f.write(content)
-                    actions_log.append(f"hugo.toml → new (baseURL = {domain})")
-                else:
-                    actions_log.append("hugo.toml → new (baseURL from example)")
-            except Exception:
-                actions_log.append("hugo.toml → new (baseURL from example)")
-
-        # 3. Patch content_paths in server config to match demo sections
-        demo_sections = []
-        for entry in os.scandir(os.path.join(content_dst)):
-            if entry.is_dir() and not entry.name.startswith("_"):
-                demo_sections.append(entry.name)
-        demo_sections.sort()
-
-        if demo_sections:
-            config_path = os.path.expanduser("~/.inn_server_config.json")
-            try:
-                config = load_server_config()
-                hugo_cfg = config.get("cms_config", {}).get("hugo_config", {})
-                old_paths = hugo_cfg.get("content_paths", [])
-                hugo_cfg["content_paths"] = demo_sections
-                with open(config_path, "w") as f:
-                    json.dump(config, f, indent=2)
-                actions_log.append(f"content_paths → {demo_sections} (was {old_paths})")
-            except Exception as e:
-                actions_log.append(f"content_paths patch failed: {e}")
+    # Option 3: clean Hugo override folders
+    if opt_clean_overrides:
+        clean_override_folders(base_path, actions_log)
 
     summary = "\n".join(f"  • {a}" for a in actions_log)
     print(json.dumps({
