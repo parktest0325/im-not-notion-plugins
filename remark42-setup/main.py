@@ -34,6 +34,29 @@ def get_base_path(data):
         return ""
 
 
+def get_site_url(base_path):
+    """Get site URL from hugo.toml baseURL, fallback to server config."""
+    # 1. hugo.toml baseURL
+    toml_path = os.path.join(base_path, "hugo.toml")
+    if os.path.isfile(toml_path):
+        with open(toml_path, "r") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith("baseURL") and "=" in stripped:
+                    val = stripped.split("=", 1)[1].strip().strip('"').strip("'").rstrip("/")
+                    if val and val != "https://example.com":
+                        return val
+    # 2. server config base_url
+    try:
+        config = load_server_config()
+        url = config.get("cms_config", {}).get("hugo_config", {}).get("base_url", "")
+        if url:
+            return url.rstrip("/")
+    except Exception:
+        pass
+    return ""
+
+
 def run(cmd, check=False):
     """Run shell command, return (returncode, stdout)."""
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -147,16 +170,23 @@ def patch_hugo_toml(base_path, site_url, port, site_id="blog", locale="ko"):
 def setup(data):
     """Setup trigger: download binary, create dirs, patch hugo.toml."""
     inp = data.get("input", {})
-    site_url = inp.get("site_url", "").rstrip("/")
+    site_url = inp.get("site_url", "").strip().rstrip("/")
     port = inp.get("port", "8080")
-    backup_rel = inp.get("backup_path", "remark42/db")
+    backup_path = inp.get("backup_path", "").strip()
 
     base_path = get_base_path(data)
     if not base_path:
         return {"success": False, "error": "base_path not configured."}
 
+    # Site URL: use input, fallback to hugo.toml baseURL / server config
     if not site_url:
-        return {"success": False, "error": "Site URL is required."}
+        site_url = get_site_url(base_path)
+    if not site_url:
+        return {"success": False, "error": "Site URL not found. Set baseURL in hugo.toml or enter manually."}
+
+    # Backup path: use input, fallback to {base_path}/remark42/db
+    if not backup_path:
+        backup_path = os.path.join(base_path, "remark42", "db")
 
     log = []
 
@@ -174,7 +204,6 @@ def setup(data):
     os.makedirs(REMARK42_VAR, exist_ok=True)
     log.append(f"Data dir: {REMARK42_VAR}")
 
-    backup_path = os.path.join(base_path, backup_rel)
     os.makedirs(backup_path, exist_ok=True)
     log.append(f"Backup dir: {backup_path}")
 
@@ -307,7 +336,6 @@ def main():
             pass
 
     trigger = data.get("trigger", "manual")
-    label = ""
 
     # Determine which manual trigger was used
     if trigger == "manual":

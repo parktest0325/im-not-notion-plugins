@@ -9,9 +9,9 @@
       "content": {
         "label": "Setup Remark42",
         "input": [
-          { "name": "site_url", "label": "Site URL (e.g. https://yourdomain.com)", "type": "text", "default": "" },
+          { "name": "site_url", "label": "Site URL (empty = auto from hugo.toml baseURL)", "type": "text", "default": "" },
           { "name": "port", "label": "Port", "type": "text", "default": "8080" },
-          { "name": "backup_path", "label": "Backup path (relative to base)", "type": "text", "default": "remark42/db" }
+          { "name": "backup_path", "label": "Backup path (empty = {base}/remark42/db)", "type": "text", "default": "" }
         ]
       }
     },
