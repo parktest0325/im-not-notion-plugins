@@ -34,22 +34,11 @@ def get_base_path(data):
         return ""
 
 
-def get_site_url(base_path):
-    """Get site URL from hugo.toml baseURL, fallback to server config."""
-    # 1. hugo.toml baseURL
-    toml_path = os.path.join(base_path, "hugo.toml")
-    if os.path.isfile(toml_path):
-        with open(toml_path, "r") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped.startswith("baseURL") and "=" in stripped:
-                    val = stripped.split("=", 1)[1].strip().strip('"').strip("'").rstrip("/")
-                    if val and val != "https://example.com":
-                        return val
-    # 2. server config base_url
+def get_site_url():
+    """Get site URL from server config (base_url)."""
     try:
         config = load_server_config()
-        url = config.get("cms_config", {}).get("hugo_config", {}).get("base_url", "")
+        url = config.get("cms_config", {}).get("hugo_config", {}).get("url", "")
         if url:
             return url.rstrip("/")
     except Exception:
@@ -86,7 +75,7 @@ def download_binary():
     """Download Remark42 binary from GitHub releases."""
     arch = detect_arch()
     osname = detect_os()
-    filename = f"remark42-{osname}-{arch}.tar.gz"
+    filename = f"remark42.{osname}-{arch}.tar.gz"
     url = f"{GITHUB_RELEASE_URL}/{filename}"
     tmp = f"/tmp/{filename}"
 
@@ -101,6 +90,11 @@ def download_binary():
     rc, _ = run(f'tar -xzf "{tmp}" -C "{REMARK42_DIR}"')
     if rc != 0:
         raise RuntimeError(f"Failed to extract {tmp}")
+
+    # Rename platform-specific binary to generic name
+    extracted = os.path.join(REMARK42_DIR, f"remark42.{osname}-{arch}")
+    if os.path.isfile(extracted) and not os.path.isfile(REMARK42_BIN):
+        os.rename(extracted, REMARK42_BIN)
 
     # Ensure executable
     run(f'chmod +x "{REMARK42_BIN}"')
@@ -169,20 +163,19 @@ def patch_hugo_toml(base_path, site_url, port, site_id="blog", locale="ko"):
 
 def setup(data):
     """Setup trigger: download binary, create dirs, patch hugo.toml."""
-    inp = data.get("input", {})
-    site_url = inp.get("site_url", "").strip().rstrip("/")
-    port = inp.get("port", "8080")
-    backup_path = inp.get("backup_path", "").strip()
+    site_url = data.get("site_url", "").strip().rstrip("/")
+    port = data.get("port", "8080")
+    backup_path = data.get("backup_path", "").strip()
 
     base_path = get_base_path(data)
     if not base_path:
         return {"success": False, "error": "base_path not configured."}
 
-    # Site URL: use input, fallback to hugo.toml baseURL / server config
+    # Site URL: use input, fallback to server config base_url
     if not site_url:
-        site_url = get_site_url(base_path)
+        site_url = get_site_url()
     if not site_url:
-        return {"success": False, "error": "Site URL not found. Set baseURL in hugo.toml or enter manually."}
+        return {"success": False, "error": "Site URL not found. Configure base_url in server settings or enter manually."}
 
     # Backup path: use input, fallback to {base_path}/remark42/db
     if not backup_path:
@@ -339,9 +332,8 @@ def main():
 
     # Determine which manual trigger was used
     if trigger == "manual":
-        inp = data.get("input", {})
-        # If site_url field exists in input, it's the Setup trigger
-        if "site_url" in inp:
+        # If site_url field exists, it's the Setup trigger
+        if "site_url" in data:
             result = setup(data)
         else:
             result = restart(data)
