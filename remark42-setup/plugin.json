@@ -1,0 +1,26 @@
+{
+  "name": "remark42-setup",
+  "description": "Install and manage Remark42 comment server",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Setup Remark42",
+        "input": [
+          { "name": "site_url", "label": "Site URL (e.g. https://yourdomain.com)", "type": "text", "default": "" },
+          { "name": "port", "label": "Port", "type": "text", "default": "8080" },
+          { "name": "backup_path", "label": "Backup path (relative to base)", "type": "text", "default": "remark42/db" }
+        ]
+      }
+    },
+    {
+      "type": "manual",
+      "content": {
+        "label": "Restart Remark42",
+        "input": []
+      }
+    }
+  ]
+}
