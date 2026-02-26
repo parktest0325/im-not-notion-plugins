@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Install and manage GoatCounter self-hosted analytics server."""
 
+import glob
 import json
 import os
 import subprocess
 import sys
 import re
+import tarfile
 import time
 
 GOATCOUNTER_DIR = os.path.expanduser("~/.goatcounter")
@@ -326,12 +328,36 @@ def restart(data):
     if not endpoint:
         return {"success": False, "error": "goatcounterEndpoint not found in hugo.toml. Set it first."}
 
+    # Check for GeoIP City database in plugin directory
+    plugin_dir = os.path.dirname(os.path.abspath(__file__))
+    geoip_path = os.path.join(plugin_dir, "GeoLite2-City.mmdb")
+
+    # Auto-extract .mmdb from .tar.gz if not already extracted
+    if not os.path.isfile(geoip_path):
+        tgz_files = glob.glob(os.path.join(plugin_dir, "GeoLite2-City*.tar.gz"))
+        for tgz in tgz_files:
+            try:
+                with tarfile.open(tgz, "r:gz") as tar:
+                    for member in tar.getmembers():
+                        if member.name.endswith("GeoLite2-City.mmdb"):
+                            member.name = os.path.basename(member.name)
+                            tar.extract(member, plugin_dir)
+                            break
+                if os.path.isfile(geoip_path):
+                    os.remove(tgz)
+                    break
+            except Exception:
+                pass
+
+    geoip_flag = f'-geoip "{geoip_path}" ' if os.path.isfile(geoip_path) else ""
+
     # Build command
     cmd = (
         f'nohup "{GOATCOUNTER_BIN}" serve '
         f'-listen :{port} '
         f'-tls none '
         f'-db "{db_conn}" '
+        f'{geoip_flag}'
         f'> "{GOATCOUNTER_LOG}" 2>&1 &'
     )
 
