@@ -349,7 +349,7 @@ def restart(data):
             except Exception:
                 pass
 
-    geoip_flag = f'-geoip "{geoip_path}" ' if os.path.isfile(geoip_path) else ""
+    geoip_flag = f'-geodb "{geoip_path}" ' if os.path.isfile(geoip_path) else ""
 
     # Build command
     cmd = (
