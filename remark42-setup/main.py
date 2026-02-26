@@ -7,6 +7,7 @@ import subprocess
 import sys
 import secrets
 import re
+import time
 
 REMARK42_DIR = os.path.expanduser("~/.remark42")
 REMARK42_BIN = os.path.join(REMARK42_DIR, "remark42")
@@ -133,8 +134,9 @@ def patch_hugo_toml(base_path, site_url, port, site_id="blog", locale="ko"):
     # Check if remark42 section already exists
     if "[params.remark42]" in content:
         # Update url if currently empty
-        if re.search(r'url\s*=\s*""', content):
-            remark_url = f"{site_url}:{port}" if port != "80" and port != "443" else site_url
+        remark42_match = re.search(r'(\[params\.remark42\][^\[]*?)url\s*=\s*""', content, re.DOTALL)
+        if remark42_match:
+            remark_url = f"{site_url}:{port}" if port not in ("80", "443") else site_url
             content = re.sub(
                 r'(\[params\.remark42\][^\[]*?)url\s*=\s*""',
                 rf'\1url = "{remark_url}"',
@@ -175,7 +177,7 @@ def setup(data):
     if not site_url:
         site_url = get_site_url()
     if not site_url:
-        return {"success": False, "error": "Site URL not found. Configure base_url in server settings or enter manually."}
+        return {"success": False, "error": "Site URL not found. Configure url in server settings or enter manually."}
 
     # Backup path: use input, fallback to {base_path}/remark42/db
     if not backup_path:
@@ -203,12 +205,10 @@ def setup(data):
     # 3. Generate secret if not exists
     secret = secrets.token_hex(32)
     env_data = {
-        "site_url": site_url,
         "port": port,
         "secret": secret,
         "site": "blog",
         "backup_path": backup_path,
-        "base_path": base_path,
     }
 
     existing = load_env()
@@ -245,6 +245,17 @@ Next steps (manual):
     }
 
 
+def read_remark_url_from_toml(base_path):
+    """Read [params.remark42] url from hugo.toml."""
+    toml_path = os.path.join(base_path, "hugo.toml")
+    if not os.path.isfile(toml_path):
+        return ""
+    with open(toml_path, "r") as f:
+        content = f.read()
+    m = re.search(r'\[params\.remark42\][^\[]*?url\s*=\s*"([^"]*)"', content, re.DOTALL)
+    return m.group(1) if m else ""
+
+
 def restart(data):
     """Restart trigger: kill existing process, start new one."""
     env = load_env()
@@ -257,20 +268,25 @@ def restart(data):
     # Kill existing
     run("pkill -f 'remark42 server' 2>/dev/null || true")
 
-    site_url = env.get("site_url", "")
     port = env.get("port", "8080")
     secret = env.get("secret", "")
     site = env.get("site", "blog")
     backup_path = env.get("backup_path", "")
 
-    remark_url = f"{site_url}:{port}" if port not in ("80", "443") else site_url
+    # REMARK_URL from hugo.toml (source of truth)
+    base_path = get_base_path(data)
+    remark_url = read_remark_url_from_toml(base_path) if base_path else ""
+    if not remark_url:
+        return {"success": False, "error": "remark42 url not found in hugo.toml. Set [params.remark42] url first."}
 
     # Build command
+    auth_anon = "true" if env.get("auth_anon", True) else "false"
     cmd = (
         f'REMARK_URL="{remark_url}" '
         f'SECRET="{secret}" '
         f'SITE="{site}" '
-        f'ALLOWED_HOSTS="{site_url}" '
+        f'ALLOWED_HOSTS="{get_site_url()}" '
+        f'AUTH_ANON={auth_anon} '
         f'nohup "{REMARK42_BIN}" server '
         f'--port={port} '
         f'--store.bolt.path="{REMARK42_VAR}" '
@@ -281,7 +297,6 @@ def restart(data):
     rc, _ = run(cmd)
 
     # Wait a moment and check if process is running
-    import time
     time.sleep(1)
     rc, pid = run("pgrep -f 'remark42 server' | head -1")
 
