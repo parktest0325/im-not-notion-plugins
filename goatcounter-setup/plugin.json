@@ -1,0 +1,35 @@
+{
+  "name": "goatcounter-setup",
+  "description": "Install and manage GoatCounter analytics server",
+  "version": "1.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Setup GoatCounter",
+        "input": [
+          { "name": "site_url", "label": "Public URL with port (e.g. https://stat.example.com or https://example.com:8081)", "type": "text", "default": "" },
+          { "name": "email", "label": "Admin email", "type": "text", "default": "" },
+          { "name": "password", "label": "Admin password", "type": "text", "default": "" },
+          { "name": "port", "label": "Listen port", "type": "text", "default": "8081" },
+          { "name": "backup_path", "label": "CSV backup path (empty = {hugo_config.base_path}/goatcounter/backup)", "type": "text", "default": "" }
+        ]
+      }
+    },
+    {
+      "type": "manual",
+      "content": {
+        "label": "Restart GoatCounter",
+        "input": []
+      }
+    },
+    {
+      "type": "cron",
+      "content": {
+        "schedule": "0 3 * * *",
+        "label": "Backup GoatCounter (daily 3AM)"
+      }
+    }
+  ]
+}
