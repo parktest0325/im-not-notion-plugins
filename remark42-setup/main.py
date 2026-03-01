@@ -14,6 +14,7 @@ REMARK42_BIN = os.path.join(REMARK42_DIR, "remark42")
 REMARK42_VAR = os.path.join(REMARK42_DIR, "var")
 REMARK42_LOG = os.path.join(REMARK42_DIR, "remark42.log")
 REMARK42_ENV = os.path.join(REMARK42_DIR, "env.json")
+REMARK42_AUTO_BACKUP = os.path.join(REMARK42_DIR, "backups")
 GITHUB_RELEASE_URL = "https://github.com/umputun/remark42/releases/latest/download"
 
 
@@ -290,7 +291,7 @@ def restart(data):
         f'nohup "{REMARK42_BIN}" server '
         f'--port={port} '
         f'--store.bolt.path="{REMARK42_VAR}" '
-        f'--backup="{backup_path}" '
+        f'--backup="{REMARK42_AUTO_BACKUP}" '
         f'> "{REMARK42_LOG}" 2>&1 &'
     )
 
@@ -335,6 +336,42 @@ def restart(data):
         }
 
 
+def backup(data):
+    """Backup trigger: copy latest Remark42 backup to a fixed filename in base_path."""
+    import glob as g
+    import shutil
+
+    env = load_env()
+    if not env:
+        return {"success": False, "error": "Remark42 not configured. Run Setup first."}
+
+    base_path = get_base_path(data)
+    if not base_path:
+        return {"success": False, "error": "base_path not configured."}
+
+    backup_path = env.get("backup_path", os.path.join(base_path, "remark42", "db"))
+
+    # Find latest auto-backup from Remark42
+    os.makedirs(REMARK42_AUTO_BACKUP, exist_ok=True)
+    files = sorted(g.glob(os.path.join(REMARK42_AUTO_BACKUP, "*.gz")), key=os.path.getmtime, reverse=True)
+
+    if not files:
+        return {"success": False, "error": f"No backup files found in {REMARK42_AUTO_BACKUP}"}
+
+    # Copy latest to fixed filename in base_path
+    os.makedirs(backup_path, exist_ok=True)
+    dst = os.path.join(backup_path, "backup.gz")
+    shutil.copy2(files[0], dst)
+
+    return {
+        "success": True,
+        "message": f"Backup saved: {dst}",
+        "actions": [
+            {"type": "toast", "content": {"message": "Remark42 backup complete", "toast_type": "success"}},
+        ],
+    }
+
+
 def main():
     data = {}
     if not sys.stdin.isatty():
@@ -343,18 +380,17 @@ def main():
         except Exception:
             pass
 
-    trigger = data.get("trigger", "manual")
+    trigger = data.get("trigger", "cron")
 
-    # Determine which manual trigger was used
-    if trigger == "manual":
-        # If site_url field exists, it's the Setup trigger
+    if trigger == "cron":
+        result = backup(data)
+    elif trigger == "manual":
         if "site_url" in data:
             result = setup(data)
         else:
             result = restart(data)
     else:
-        # Cron or other — default to restart
-        result = restart(data)
+        result = backup(data)
 
     print(json.dumps(result))
 

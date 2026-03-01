@@ -21,6 +21,13 @@
         "label": "Restart Remark42",
         "input": []
       }
+    },
+    {
+      "type": "cron",
+      "content": {
+        "schedule": "0 3 * * *",
+        "label": "Backup Remark42 (daily 3AM)"
+      }
     }
   ]
 }

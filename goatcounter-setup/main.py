@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Install and manage GoatCounter self-hosted analytics server."""
 
-import glob
 import json
 import os
 import subprocess
 import sys
 import re
-import tarfile
 import time
 
 GOATCOUNTER_DIR = os.path.expanduser("~/.goatcounter")
@@ -15,6 +13,8 @@ GOATCOUNTER_BIN = os.path.join(GOATCOUNTER_DIR, "goatcounter")
 GOATCOUNTER_DB = os.path.join(GOATCOUNTER_DIR, "goatcounter.db")
 GOATCOUNTER_LOG = os.path.join(GOATCOUNTER_DIR, "goatcounter.log")
 GOATCOUNTER_ENV = os.path.join(GOATCOUNTER_DIR, "env.json")
+GEOIP_DB = os.path.join(GOATCOUNTER_DIR, "GeoLite2-City.mmdb")
+GEOIP_URL = "https://github.com/wp-statistics/GeoLite2-City/raw/master/GeoLite2-City.mmdb.gz"
 
 
 def load_server_config():
@@ -116,6 +116,25 @@ def download_binary():
     # Verify
     rc, version_out = run(f'"{GOATCOUNTER_BIN}" version 2>&1 || true')
     return version_out or version
+
+
+def download_geoip():
+    """Download GeoLite2-City.mmdb from GitHub."""
+    tmp = "/tmp/GeoLite2-City.mmdb.gz"
+    rc, _ = run(f'curl -fSL -o "{tmp}" "{GEOIP_URL}"')
+    if rc != 0:
+        return "GeoIP download failed (non-critical, Country DB will be used)"
+    rc, _ = run(f'gunzip -f "{tmp}"')
+    if rc != 0:
+        return "GeoIP extract failed"
+    extracted = tmp.replace(".gz", "")
+    if os.path.isfile(extracted):
+        os.makedirs(GOATCOUNTER_DIR, exist_ok=True)
+        if os.path.isfile(GEOIP_DB):
+            os.remove(GEOIP_DB)
+        os.rename(extracted, GEOIP_DB)
+        return f"GeoIP City DB: {GEOIP_DB}"
+    return "GeoIP extract failed"
 
 
 def save_env(env_data):
@@ -241,10 +260,10 @@ def setup(data):
                         f"Failed to create DB with vhost: {vhost}\n\n"
                         f"Error: {out}\n\n"
                         f"If re-configuring, stop the server and remove the old DB first, then run Setup again.\n\n"
-                        f"```\n"
+                        f"{{{{copy:Reset Commands}}}}\n"
                         f"pkill -f 'goatcounter serve'\n"
                         f"rm {GOATCOUNTER_DB}\n"
-                        f"```"
+                        f"{{{{/copy}}}}"
                     ),
                 }},
             ],
@@ -279,7 +298,11 @@ def setup(data):
     save_env(env_data)
     log.append(f"Config saved: {GOATCOUNTER_ENV}")
 
-    # 5. Patch hugo.toml
+    # 5. Download GeoIP City DB
+    geoip_result = download_geoip()
+    log.append(geoip_result)
+
+    # 6. Patch hugo.toml
     toml_result = patch_hugo_toml(base_path, public_url)
     log.append(toml_result)
 
@@ -328,28 +351,8 @@ def restart(data):
     if not endpoint:
         return {"success": False, "error": "goatcounterEndpoint not found in hugo.toml. Set it first."}
 
-    # Check for GeoIP City database in plugin directory
-    plugin_dir = os.path.dirname(os.path.abspath(__file__))
-    geoip_path = os.path.join(plugin_dir, "GeoLite2-City.mmdb")
-
-    # Auto-extract .mmdb from .tar.gz if not already extracted
-    if not os.path.isfile(geoip_path):
-        tgz_files = glob.glob(os.path.join(plugin_dir, "GeoLite2-City*.tar.gz"))
-        for tgz in tgz_files:
-            try:
-                with tarfile.open(tgz, "r:gz") as tar:
-                    for member in tar.getmembers():
-                        if member.name.endswith("GeoLite2-City.mmdb"):
-                            member.name = os.path.basename(member.name)
-                            tar.extract(member, plugin_dir)
-                            break
-                if os.path.isfile(geoip_path):
-                    os.remove(tgz)
-                    break
-            except Exception:
-                pass
-
-    geoip_flag = f'-geodb "{geoip_path}" ' if os.path.isfile(geoip_path) else ""
+    # Check for GeoIP City database
+    geoip_flag = f'-geodb "{GEOIP_DB}" ' if os.path.isfile(GEOIP_DB) else ""
 
     # Build command
     cmd = (
@@ -444,7 +447,7 @@ def main():
         except Exception:
             pass
 
-    trigger = data.get("trigger", "manual")
+    trigger = data.get("trigger", "cron")
 
     if trigger == "cron":
         result = backup(data)
