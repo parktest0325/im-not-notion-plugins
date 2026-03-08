@@ -177,6 +177,42 @@ def do_backup(base_path, include_git, include_themes, keep):
     }
 
 
+def list_backups():
+    """List existing backups without creating a new one."""
+    backup_dir = os.path.expanduser("~/inn_backups")
+    if not os.path.isdir(backup_dir):
+        print(json.dumps(result_toast("No backups found. Run 'Backup Now' first.")))
+        return
+
+    pattern = os.path.join(backup_dir, "blog_*.tar.gz")
+    existing = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+
+    if not existing:
+        print(json.dumps(result_toast("No backups found. Run 'Backup Now' first.")))
+        return
+
+    download_items = []
+    for f in existing:
+        download_items.append({
+            "path": f,
+            "filename": os.path.basename(f),
+            "size": format_size(os.path.getsize(f)),
+        })
+
+    print(json.dumps({
+        "success": True,
+        "message": f"Found {len(existing)} backup(s).",
+        "actions": [
+            {
+                "type": "download_files",
+                "content": {
+                    "items": download_items,
+                },
+            },
+        ],
+    }))
+
+
 def main():
     data = {}
     if not sys.stdin.isatty():
@@ -186,6 +222,11 @@ def main():
             pass
 
     trigger = data.get("trigger", "cron")
+
+    # "Download Backups" trigger — no input fields, just list existing backups
+    if trigger == "manual" and "include_git" not in data:
+        list_backups()
+        return
 
     base_path = get_base_path(data)
 

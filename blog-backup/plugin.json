@@ -1,7 +1,7 @@
 {
   "name": "blog-backup",
   "description": "Create compressed backup of the Hugo blog",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entry": "main.py",
   "triggers": [
     {
@@ -28,6 +28,13 @@
             "default": "5"
           }
         ]
+      }
+    },
+    {
+      "type": "manual",
+      "content": {
+        "label": "Download Backups",
+        "input": []
       }
     },
     {
