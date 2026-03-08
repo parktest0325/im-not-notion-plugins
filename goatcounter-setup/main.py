@@ -270,14 +270,14 @@ def setup(data):
         }
     log.append(f"DB created: {GOATCOUNTER_DB} (vhost: {vhost})")
 
-    # Enable public counter API by default
+    # Enable public counter API + clear country restriction (allow all)
     rc2, _ = run(
         f'"{GOATCOUNTER_BIN}" db query '
         f'-db "{db_conn}" '
-        f"\"UPDATE sites SET settings = json_set(settings, '$.allow_counter', json('true'))\""
+        f"\"UPDATE sites SET settings = json_set(settings, '$.allow_counter', json('true'), '$.collect_regions', '')\""
     )
     if rc2 == 0:
-        log.append("Counter API enabled")
+        log.append("Counter API enabled, region restriction cleared")
 
     # 3. Create backup directory
     os.makedirs(backup_path, exist_ok=True)
@@ -351,7 +351,9 @@ def restart(data):
     if not endpoint:
         return {"success": False, "error": "goatcounterEndpoint not found in hugo.toml. Set it first."}
 
-    # Check for GeoIP City database
+    # Check for GeoIP City database, download if missing
+    if not os.path.isfile(GEOIP_DB):
+        download_geoip()
     geoip_flag = f'-geodb "{GEOIP_DB}" ' if os.path.isfile(GEOIP_DB) else ""
 
     # Build command
