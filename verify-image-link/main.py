@@ -70,11 +70,17 @@ def get_relative_path(abs_path, base_dir):
     return None
 
 
+def strip_fragment(path):
+    """Strip #fragment from image path. e.g. 'img.png#center-w60' -> 'img.png'"""
+    idx = path.find("#")
+    return path[:idx] if idx >= 0 else path
+
+
 def parse_all_image_refs(md_content):
     """Extract all image references (local + external URLs) from markdown.
 
     Returns:
-        local_refs: list of local image paths (stripped of leading /)
+        local_refs: list of local image paths (stripped of leading / and #fragment)
         external_urls: list of http(s) URLs
     """
     local_refs = []
@@ -86,7 +92,7 @@ def parse_all_image_refs(md_content):
         if path.startswith(("http://", "https://")):
             external_urls.append(path)
         else:
-            local_refs.append(path.lstrip("/"))
+            local_refs.append(strip_fragment(path).lstrip("/"))
 
     # HTML: <img src="path"> or <img src='path'>
     for src in re.findall(r"""<img\s[^>]*src\s*=\s*["']([^"']+)["']""", md_content):
@@ -94,7 +100,7 @@ def parse_all_image_refs(md_content):
         if src.startswith(("http://", "https://")):
             external_urls.append(src)
         else:
-            local_refs.append(src.lstrip("/"))
+            local_refs.append(strip_fragment(src).lstrip("/"))
 
     return local_refs, external_urls
 

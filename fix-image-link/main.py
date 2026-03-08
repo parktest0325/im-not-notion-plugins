@@ -78,6 +78,12 @@ def get_relative_path(abs_path, base_dir):
     return None
 
 
+def strip_fragment(path):
+    """Strip #fragment from image path. e.g. 'img.png#center-w60' -> 'img.png'"""
+    idx = path.find("#")
+    return path[:idx] if idx >= 0 else path
+
+
 def generate_url_filename(url):
     """Generate filename from URL: sha256 hash (12 chars) + extension."""
     path_part = url.split("?")[0].split("#")[0]
@@ -235,7 +241,9 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
                         urls_failed += 1
                         details.append(f"  FAILED download: {path}")
             else:
-                ref_clean = path.lstrip("/")
+                raw_path = path.lstrip("/")
+                ref_clean = strip_fragment(raw_path)
+                fragment = raw_path[len(ref_clean):]
 
                 if ref_clean.startswith(my_prefix):
                     # Already mine
@@ -259,7 +267,7 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
                         if dry_run:
                             details.append(f"  [DRY] Relink (same): {ref_clean} -> {new_rel}")
                         else:
-                            content = replace_ref_in_content(content, ref, new_rel)
+                            content = replace_ref_in_content(content, ref, new_rel + fragment)
                             details.append(f"  Relinked (same): {ref_clean} -> {new_rel}")
                         refs_copied += 1
                         global_referenced.add(new_rel)
@@ -274,7 +282,7 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
                         else:
                             os.makedirs(os.path.dirname(new_abs), exist_ok=True)
                             shutil.copy2(src_abs, new_abs)
-                            content = replace_ref_in_content(content, ref, new_rel)
+                            content = replace_ref_in_content(content, ref, new_rel + fragment)
                             details.append(f"  Copied (renamed): {ref_clean} -> {new_rel}")
                         refs_copied += 1
                         global_referenced.add(new_rel)
@@ -285,7 +293,7 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
                     else:
                         os.makedirs(os.path.dirname(new_abs), exist_ok=True)
                         shutil.copy2(src_abs, new_abs)
-                        content = replace_ref_in_content(content, ref, new_rel)
+                        content = replace_ref_in_content(content, ref, new_rel + fragment)
                         details.append(f"  Copied: {ref_clean} -> {new_rel}")
                     refs_copied += 1
                     global_referenced.add(new_rel)
@@ -298,13 +306,12 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
             final_refs = parse_all_image_refs(content)
             for ref in final_refs:
                 if not ref["is_external_url"]:
-                    global_referenced.add(ref["path"].lstrip("/"))
+                    global_referenced.add(strip_fragment(ref["path"].lstrip("/")))
         elif dry_run:
             # In dry run, also collect current refs that weren't changed
             for ref in refs:
                 if not ref["is_external_url"]:
-                    ref_clean = ref["path"].lstrip("/")
-                    global_referenced.add(ref_clean)
+                    global_referenced.add(strip_fragment(ref["path"].lstrip("/")))
 
         file_total = refs_copied + urls_downloaded
         if file_total > 0 or urls_failed > 0:
