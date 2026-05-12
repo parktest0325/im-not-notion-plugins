@@ -24,6 +24,14 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
+# Force line-buffered stdout so each NDJSON message reaches the host
+# immediately even if the plugin blocks afterwards on stdin.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except (AttributeError, OSError):
+    pass
+
+
 # ── NDJSON protocol helpers ──────────────────────────────────────────────
 
 def _send(msg):
