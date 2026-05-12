@@ -470,11 +470,18 @@ def manage_archives(data):
             continue
 
         md_path = os.path.join(base_path, "content", "archive", category, f"{slug}.md")
-        static_dir = os.path.join(base_path, "static", "snapshot", category, slug)
+        # Current layout + older variants we may have produced
+        static_targets = [
+            os.path.join(base_path, "static", "snapshot", category, slug),          # current
+            os.path.join(base_path, "static", "archive", category, slug),           # v2.0 pre-collision-fix folder
+            os.path.join(base_path, "static", "archive", category, f"{slug}.html"), # v1.x single file
+        ]
 
         try:
             if os.path.isfile(md_path): os.remove(md_path)
-            if os.path.isdir(static_dir): shutil.rmtree(static_dir)
+            for path in static_targets:
+                if os.path.isdir(path): shutil.rmtree(path)
+                elif os.path.isfile(path): os.remove(path)
             deleted.append(key)
         except Exception as e:
             failed.append((key, str(e)))
