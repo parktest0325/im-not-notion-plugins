@@ -376,7 +376,7 @@ def main():
     data = {}
     if not sys.stdin.isatty():
         try:
-            data = json.loads(sys.stdin.read())
+            data = json.loads(sys.stdin.readline())
         except Exception:
             pass
 

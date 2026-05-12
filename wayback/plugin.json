@@ -1,0 +1,47 @@
+{
+  "name": "wayback",
+  "description": "Archive external URLs as single-file HTML snapshots with full styles and images",
+  "version": "2.0.0",
+  "entry": "main.py",
+  "triggers": [
+    {
+      "type": "manual",
+      "content": {
+        "label": "Archive URL",
+        "input": [
+          {
+            "name": "url",
+            "label": "URL",
+            "type": "text",
+            "default": ""
+          },
+          {
+            "name": "title",
+            "label": "Title (leave blank to auto-detect)",
+            "type": "text",
+            "default": ""
+          },
+          {
+            "name": "category",
+            "label": "Category (folder)",
+            "type": "text",
+            "default": "tmp"
+          },
+          {
+            "name": "tags",
+            "label": "Tags (comma-separated)",
+            "type": "text",
+            "default": ""
+          }
+        ]
+      }
+    },
+    {
+      "type": "manual",
+      "content": {
+        "label": "Manage Archives",
+        "input": []
+      }
+    }
+  ]
+}

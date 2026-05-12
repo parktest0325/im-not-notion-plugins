@@ -339,7 +339,7 @@ def handle_manual(data, base_path, image_path, content_paths, hidden_path):
 
 
 def main():
-    data = json.loads(sys.stdin.read())
+    data = json.loads(sys.stdin.readline())
     trigger = data.get("trigger", "")
     ctx = data.get("context", {})
 
