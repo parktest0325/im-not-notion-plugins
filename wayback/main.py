@@ -317,7 +317,7 @@ def archive_url(data):
     tags = parse_tags(data.get("tags") or "")
 
     category_content_dir = os.path.join(base_path, "content", "archive", category)
-    category_static_dir = os.path.join(base_path, "static", "archive", category)
+    category_static_dir = os.path.join(base_path, "static", "snapshot", category)
     os.makedirs(category_content_dir, exist_ok=True)
     os.makedirs(category_static_dir, exist_ok=True)
 
@@ -341,7 +341,7 @@ def archive_url(data):
     date_str = now.strftime("%Y-%m-%dT%H:%M:%S%z")
     date_str = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", date_str)
     domain = urlparse(url).netloc
-    archive_url_path = f"/archive/{category}/{slug}/"
+    archive_url_path = f"/snapshot/{category}/{slug}/"
 
     md_path = os.path.join(category_content_dir, f"{slug}.md")
     tags_yaml = "[" + ", ".join(f'"{yaml_escape(t)}"' for t in tags) + "]"
@@ -462,7 +462,7 @@ def manage_archives(data):
             continue
 
         md_path = os.path.join(base_path, "content", "archive", category, f"{slug}.md")
-        static_dir = os.path.join(base_path, "static", "archive", category, slug)
+        static_dir = os.path.join(base_path, "static", "snapshot", category, slug)
 
         try:
             if os.path.isfile(md_path): os.remove(md_path)
