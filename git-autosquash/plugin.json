@@ -1,7 +1,7 @@
 {
   "name": "git-autosquash",
   "description": "Squash commits by date range or monthly auto-squash",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "entry": "main.py",
   "triggers": [
     {

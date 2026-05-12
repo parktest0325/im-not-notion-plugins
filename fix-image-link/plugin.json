@@ -1,7 +1,7 @@
 {
   "name": "fix-image-link",
   "description": "Fix image links — copy external refs, download URLs, clean global orphans (two-pass)",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "entry": "main.py",
   "triggers": [
     {
