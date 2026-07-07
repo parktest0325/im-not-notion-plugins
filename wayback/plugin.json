@@ -1,7 +1,7 @@
 {
   "name": "wayback",
   "description": "Archive external URLs as single-file HTML snapshots with full styles and images",
-  "version": "2.0.0",
+  "version": "2.5.1",
   "entry": "main.py",
   "triggers": [
     {
@@ -30,6 +30,18 @@
           {
             "name": "tags",
             "label": "Tags (comma-separated)",
+            "type": "text",
+            "default": ""
+          },
+          {
+            "name": "document_cookie",
+            "label": "Request Headers",
+            "type": "password",
+            "default": ""
+          },
+          {
+            "name": "cookie_domain",
+            "label": "Cookie domain override (optional, e.g. .example.com)",
             "type": "text",
             "default": ""
           }

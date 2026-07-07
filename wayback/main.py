@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unicodedata
 import urllib.request
 import uuid
@@ -116,6 +117,11 @@ def result_guide(title, body):
 # ── Slug ─────────────────────────────────────────────────────────────────
 
 MAX_SLUG_LEN = 20
+DEFAULT_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/149.0.0.0 Safari/537.36"
+)
 
 
 def slugify(text):
@@ -179,11 +185,180 @@ def clean_fetched_title(title):
     return title
 
 
-def fetch_title(url):
+def strip_wrapping_quotes(value):
+    value = (value or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"', "`"):
+        return value[1:-1].strip()
+    return value
+
+
+def extract_cookie_header(raw):
+    value = (raw or "").strip()
+    if not value:
+        return ""
+
+    for line in value.splitlines():
+        m = re.match(r"^\s*cookie\s*:\s*(.+?)\s*$", line, re.IGNORECASE)
+        if m:
+            return strip_wrapping_quotes(m.group(1))
+
+    header_patterns = (
+        r"""(?is)(?:^|\s)-H\s+(['"])(cookie\s*:\s*.*?)\1""",
+        r"""(?is)(?:^|\s)--header\s+(['"])(cookie\s*:\s*.*?)\1""",
+    )
+    for pattern in header_patterns:
+        m = re.search(pattern, value)
+        if m:
+            return strip_wrapping_quotes(m.group(2).split(":", 1)[1])
+
+    cookie_arg_patterns = (
+        r"""(?is)(?:^|\s)-b\s+(['"])(.*?)\1""",
+        r"""(?is)(?:^|\s)--cookie\s+(['"])(.*?)\1""",
+    )
+    for pattern in cookie_arg_patterns:
+        m = re.search(pattern, value)
+        if m:
+            return strip_wrapping_quotes(m.group(2))
+
+    value = strip_wrapping_quotes(value)
+    if value.lower().startswith("cookie:"):
+        value = value.split(":", 1)[1].strip()
+    return value
+
+
+def normalize_cookie_header(raw):
+    value = extract_cookie_header(raw)
+    return value.replace("\r", "").replace("\n", "; ")
+
+
+_SKIP_FORWARDED_HEADERS = {
+    "accept-encoding",
+    "connection",
+    "content-length",
+    "cookie",
+    "host",
+    "user-agent",
+}
+
+
+def parse_pasted_headers(raw):
+    headers = {}
+    lines = list((raw or "").splitlines())
+    for pattern in (
+        r"""(?is)(?:^|\s)-H\s+(['"])(.*?)\1""",
+        r"""(?is)(?:^|\s)--header\s+(['"])(.*?)\1""",
+    ):
+        for match in re.finditer(pattern, raw or ""):
+            lines.append(match.group(2))
+
+    for line in lines:
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        name, value = line.split(":", 1)
+        name = name.strip()
+        value = value.strip()
+        if not re.match(r"^[A-Za-z0-9-]+$", name):
+            continue
+        if not name or name.lower() in _SKIP_FORWARDED_HEADERS:
+            continue
+        headers[name] = value
+    return headers
+
+
+def should_prefetch_document(raw):
+    value = (raw or "").strip()
+    if not value:
+        return False
+    if re.match(r"^(GET|POST|HEAD|PUT|PATCH|DELETE|OPTIONS)\s+", value, re.IGNORECASE):
+        return True
+    return bool(parse_pasted_headers(value))
+
+
+def build_request_headers(raw_auth_input, cookie_header=None, user_agent=None):
+    headers = parse_pasted_headers(raw_auth_input)
+    headers["User-Agent"] = normalize_user_agent(user_agent)
+    cookie_header = normalize_cookie_header(cookie_header or raw_auth_input)
+    if cookie_header:
+        headers["Cookie"] = cookie_header
+    return headers
+
+
+def parse_document_cookie(raw):
+    cookies = []
+    for part in normalize_cookie_header(raw).split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if name:
+            cookies.append((name, value))
+    return cookies
+
+
+def normalize_cookie_domain(raw):
+    value = (raw or "").strip().lower()
+    if not value:
+        return ""
+    value = re.sub(r"^https?://", "", value)
+    value = value.split("/", 1)[0].split(":", 1)[0].strip()
+    return value
+
+
+def write_monolith_cookie_file(url, raw_cookie, cookie_domain=None):
+    cookies = parse_document_cookie(raw_cookie)
+    if not cookies:
+        return None, 0
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return None, 0
+
+    domain = normalize_cookie_domain(cookie_domain) or host
+    domains = [(domain, "TRUE" if domain.startswith(".") else "FALSE")]
+    if domain.startswith(".") and len(domain) > 1:
+        domains.append((domain[1:], "FALSE"))
+    secure = "TRUE" if parsed.scheme.lower() == "https" else "FALSE"
+    lines = ["# Netscape HTTP Cookie File"]
+    for cookie_domain_value, include_subdomains in domains:
+        for name, value in cookies:
+            lines.append("\t".join([cookie_domain_value, include_subdomains, "/", secure, "0", name, value]))
+
+    fd, path = tempfile.mkstemp(prefix="wayback-cookies-", suffix=".txt")
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (wayback-plugin)"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read(65536).decode("utf-8", errors="replace")
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines) + "\n")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        raise
+    return path, len(cookies)
+
+
+def fetch_document(url, raw_auth_input=None, cookie_header=None, user_agent=None, timeout=180):
+    headers = build_request_headers(raw_auth_input, cookie_header, user_agent)
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def fetch_title(url, cookie_header=None, user_agent=None, raw_auth_input=None):
+    try:
+        html = fetch_document(url, raw_auth_input, cookie_header, user_agent, timeout=15)
+        html = html[:65536].decode("utf-8", errors="replace")
     except Exception:
         return ""
     m = _TITLE_RE.search(html)
@@ -210,6 +385,10 @@ def parse_tags(raw):
 
 def yaml_escape(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def normalize_user_agent(_raw=None):
+    return DEFAULT_BROWSER_USER_AGENT
 
 
 # ── Monolith ─────────────────────────────────────────────────────────────
@@ -275,12 +454,21 @@ def ensure_monolith():
     return dest, ""
 
 
-def run_monolith(binary, url, output_path):
+def run_monolith(binary, url, output_path, cookie_file=None, user_agent=None, input_html=None):
+    cmd = [binary, "--no-audio", "--no-video", "-u", normalize_user_agent(user_agent)]
+    if cookie_file:
+        cmd.extend(["-C", cookie_file])
+    if input_html is not None:
+        cmd.extend(["-b", url, "-o", output_path, "-"])
+    else:
+        cmd.extend(["-o", output_path, url])
     r = subprocess.run(
-        [binary, "--no-audio", "--no-video", "-o", output_path, url],
-        capture_output=True, text=True, timeout=300,
+        cmd,
+        input=input_html,
+        capture_output=True, timeout=300,
     )
-    return r.returncode == 0, r.stderr.strip()
+    stderr = r.stderr.decode("utf-8", errors="replace").strip()
+    return r.returncode == 0, stderr
 
 
 def format_size(b):
@@ -314,10 +502,18 @@ def archive_url(data):
     if not binary:
         return result_guide("monolith required", msg)
 
+    raw_auth_input = data.get("document_cookie") or ""
+    document_cookie = normalize_cookie_header(raw_auth_input)
+    cookie_count = len(parse_document_cookie(document_cookie)) if document_cookie else 0
+    if document_cookie and cookie_count == 0:
+        return {"success": False, "error": "No valid name=value cookies found in document.cookie input."}
+    cookie_domain = normalize_cookie_domain(data.get("cookie_domain") or "")
+    user_agent = DEFAULT_BROWSER_USER_AGENT
+
     title = (data.get("title") or "").strip()
     if not title:
         send_progress(phase="fetch_title", message="Fetching page title...")
-        title = fetch_title(url)
+        title = fetch_title(url, document_cookie, user_agent, raw_auth_input)
     if not title:
         title = urlparse(url).netloc or "untitled"
 
@@ -335,7 +531,29 @@ def archive_url(data):
     html_path = os.path.join(slug_static_dir, "index.html")
 
     send_progress(phase="download", message=f"Snapshotting {url} ...")
-    ok, stderr = run_monolith(binary, url, html_path)
+    cookie_file = None
+    try:
+        input_html = None
+        if should_prefetch_document(raw_auth_input):
+            send_progress(phase="download", message="Prefetching document with pasted headers...")
+            try:
+                input_html = fetch_document(url, raw_auth_input, document_cookie, user_agent)
+            except Exception as e:
+                return result_guide("header prefetch failed", str(e))
+
+        if document_cookie:
+            cookie_file, written_cookie_count = write_monolith_cookie_file(url, document_cookie, cookie_domain)
+            if not cookie_file:
+                return {"success": False, "error": "No valid name=value cookies found in document.cookie input."}
+            cookie_count = written_cookie_count
+            send_progress(phase="download", message=f"Snapshotting with {cookie_count} cookie(s) ...")
+        ok, stderr = run_monolith(binary, url, html_path, cookie_file, user_agent, input_html)
+    finally:
+        if cookie_file:
+            try:
+                os.remove(cookie_file)
+            except OSError:
+                pass
     if not ok:
         # cleanup empty folder
         try: os.rmdir(slug_static_dir)
@@ -362,6 +580,7 @@ def archive_url(data):
         f'category: "{category}"\n'
         f"tags: {tags_yaml}\n"
         f'archive_path: "{archive_url_path}"\n'
+        f"used_cookies: {'true' if cookie_count else 'false'}\n"
         "---\n\n"
         f"[View original]({url}) · [Archived snapshot]({archive_url_path})\n"
     )
@@ -374,6 +593,7 @@ def archive_url(data):
         f"  Category:  {category}\n"
         f"  Slug:      {slug}\n"
         f"  Tags:      {', '.join(tags) if tags else '(none)'}\n"
+        f"  Cookies:   {cookie_count} provided\n"
         f"  HTML:      {html_path} ({format_size(file_size)})\n"
         f"  Markdown:  {md_path}\n"
     )
